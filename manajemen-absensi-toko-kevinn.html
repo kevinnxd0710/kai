@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manajemen Absensi Toko</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class', 
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#3b82f6', // blue-500
+                        'secondary': '#10b981', // emerald-500
+                        'accent': '#f59e0b', // amber-500
+                        'bg-light': '#f3f4f6', // gray-100
+                        'bg-dark': '#111827', // gray-900
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-out',
+                        'slide-in-up': 'slideInUp 0.5s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideInUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                    },
+                },
+            },
+        };
+    </script>
+    <style>
+        /* Utility Class untuk Glassmorphism Ringan */
+        .glass {
+            background-color: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease-in-out;
+        }
+        .dark .glass {
+            background-color: rgba(31, 41, 55, 0.5); /* dark-900 semi-trans */
+            border: 1px solid rgba(55, 65, 81, 0.3);
+        }
+        /* Style untuk Tabular Nums */
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+        }
+        /* Style Transisi Page */
+        .page-content {
+            animation: fade-in 0.3s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-bg-light dark:bg-bg-dark text-gray-800 dark:text-gray-200 transition-colors duration-300">
+
+    <header class="sticky top-0 z-40 p-4 glass shadow-lg dark:shadow-xl">
+        <div class="flex justify-between items-center max-w-7xl mx-auto">
+            <h1 class="text-2xl font-bold text-primary dark:text-secondary">Manajemen Absensi Toko - Kevinn</h1>
+            <div class="flex items-center space-x-4">
+                <div class="hidden sm:flex items-center space-x-2 bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded-full text-sm font-medium">
+                    <span class="text-gray-500 dark:text-gray-400">Peran:</span>
+                    <span id="current-role" class="font-semibold text-primary dark:text-secondary">Staff</span>
+                </div>
+                <button id="toggle-role" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-accent" aria-label="Ganti Peran Pengguna">
+                    &#x21BA; </button>
+                <button id="toggle-dark-mode" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-accent" aria-label="Toggle Dark Mode">
+                    <span id="dark-mode-icon">&#9788;</span> </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex max-w-7xl mx-auto pt-4 pb-20 sm:pb-4">
+        
+        <nav id="sidebar" class="hidden sm:block w-64 mr-4 flex-shrink-0">
+            <div class="sticky top-[72px] p-4 glass rounded-xl shadow-lg animate-fade-in">
+                </div>
+        </nav>
+
+        <main id="main-content" class="flex-grow p-4 w-full sm:w-auto animate-fade-in">
+            </main>
+    </div>
+
+    <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 sm:hidden glass shadow-2xl z-50 p-2 animate-slide-in-up">
+        <div class="flex justify-around">
+            </div>
+    </nav>
+
+    <div id="modal-container" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden justify-center items-center p-4 transition-opacity duration-300 opacity-0" aria-modal="true" role="dialog">
+        <div id="modal-content" class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md transform transition-all duration-300 scale-95">
+            </div>
+    </div>
+
+    <script>
+        // ======================================================================================================
+        // ** KONFIGURASI APLIKASI & DATA AWAL (MODEL) **
+        // ======================================================================================================
+
+        const ROLES = ['Admin', 'Supervisor', 'Staff'];
+        const NAV_ITEMS = [
+            { id: 'dashboard', label: 'Dashboard', roles: ['Admin', 'Supervisor', 'Staff'], icon: '&#9737;' },
+            { id: 'absensi', label: 'Absensi', roles: ['Staff'], icon: '&#9200;' },
+            { id: 'shift', label: 'Shift', roles: ['Admin', 'Supervisor'], icon: '&#9728;' },
+            { id: 'pengajuan', label: 'Pengajuan', roles: ['Staff'], icon: '&#10004;' },
+            { id: 'persetujuan', label: 'Persetujuan', roles: ['Admin', 'Supervisor'], icon: '&#9989;' },
+            { id: 'laporan', label: 'Laporan', roles: ['Admin', 'Supervisor'], icon: '&#128202;' },
+            { id: 'pengaturan', label: 'Pengaturan', roles: ['Admin'], icon: '&#9881;' },
+        ];
+
+        // Geofence default (Kantor Pusat Fiksi)
+        const DEFAULT_GEOFENCE = {
+            latitude: -6.917464, // Bandung Fiksi
+            longitude: 107.619125,
+            radius: 50 // meter
+        };
+
+        // Karyawan default
+        const DEFAULT_EMPLOYEE = {
+            id: 'E001',
+            name: 'Budi Santoso',
+            role: 'Staff',
+            shiftId: 'S001'
+        };
+
+        // Data awal untuk localStorage (Hanya jika belum ada)
+        const INITIAL_DATA = {
+            darkMode: 'light',
+            currentRole: 'Staff',
+            employee: DEFAULT_EMPLOYEE,
+            storeSettings: { geofence: DEFAULT_GEOFENCE, qrCode: 'ATRQR' },
+            shifts: [{ id: 'S001', name: 'Shift Pagi', start: '08:00', end: '17:00' }],
+            attendance: [], // { id, userId, clockIn, clockOut, duration, status, isLate, latIn, lngIn, method }
+            submissions: [], // { id, userId, type, date, reason, status: 'Pending'|'Approved'|'Rejected' }
+        };
+
+        // ======================================================================================================
+        // ** HELPER FUNCTIONS (UTILITAS) **
+        // ======================================================================================================
+
+        /** Mengambil data dari localStorage atau inisiasi data awal */
+        const getData = (key) => {
+            const data = localStorage.getItem(key);
+            if (data) return JSON.parse(data);
+            return INITIAL_DATA[key] || null;
+        };
+
+        /** Menyimpan data ke localStorage */
+        const setData = (key, value) => {
+            localStorage.setItem(key, JSON.stringify(value));
+        };
+
+        /** Memformat Date object menjadi string waktu (HH:MM:SS) */
+        const formatTime = (date) => date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+        /** Memformat Date object menjadi string tanggal (DD/MM/YYYY) */
+        const formatDate = (date) => date.toLocaleDateString('id-ID');
+
+        /** Menghitung jarak antara dua koordinat (Haversine Formula) */
+        const getDistance = (lat1, lon1, lat2, lon2) => {
+            const R = 6371e3; // Radius bumi dalam meter
+            const φ1 = lat1 * Math.PI / 180;
+            const φ2 = lat2 * Math.PI / 180;
+            const Δφ = (lat2 - lat1) * Math.PI / 180;
+            const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+            return R * c; // Jarak dalam meter
+        };
+
+        /** Menampilkan Modal */
+        const showModal = (title, bodyHtml, confirmCallback = null) => {
+            const modalContainer = document.getElementById('modal-container');
+            const modalContent = document.getElementById('modal-content');
+            
+            modalContent.innerHTML = `
+                <h3 class="text-xl font-bold mb-4">${title}</h3>
+                <div class="text-sm space-y-3">${bodyHtml}</div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition duration-150 focus:outline-none focus:ring-2 focus:ring-gray-500">Tutup</button>
+                    ${confirmCallback ? `<button id="modal-confirm" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 transition duration-150 focus:outline-none focus:ring-2 focus:ring-primary">Konfirmasi</button>` : ''}
+                </div>
+            `;
+            
+            if (confirmCallback) {
+                document.getElementById('modal-confirm').onclick = () => {
+                    confirmCallback();
+                    closeModal();
+                };
+            }
+
+            // Animasi masuk
+            modalContainer.classList.remove('hidden', 'opacity-0');
+            modalContainer.classList.add('flex', 'opacity-100');
+            modalContent.classList.remove('scale-95');
+            modalContent.classList.add('scale-100');
+        };
+
+        /** Menutup Modal */
+        const closeModal = () => {
+            const modalContainer = document.getElementById('modal-container');
+            const modalContent = document.getElementById('modal-content');
+
+            // Animasi keluar
+            modalContainer.classList.remove('opacity-100');
+            modalContainer.classList.add('opacity-0');
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-95');
+            
+            setTimeout(() => {
+                modalContainer.classList.remove('flex');
+                modalContainer.classList.add('hidden');
+                modalContent.innerHTML = '';
+            }, 300); // Sesuai durasi transisi CSS
+        };
+
+
+        // ======================================================================================================
+        // ** STATE MANAGEMENT & INITIALIZATION (KONTROLER) **
+        // ======================================================================================================
+
+        let state = {
+            currentRole: getData('currentRole'),
+            darkMode: getData('darkMode'),
+            employee: getData('employee'),
+            storeSettings: getData('storeSettings'),
+            shifts: getData('shifts'),
+            attendance: getData('attendance'),
+            submissions: getData('submissions'),
+            activePage: 'dashboard',
+        };
+
+        /** Memuat semua data dari localStorage saat inisiasi */
+        const loadInitialData = () => {
+            Object.keys(INITIAL_DATA).forEach(key => {
+                if (localStorage.getItem(key) === null) {
+                    setData(key, INITIAL_DATA[key]);
+                }
+            });
+            // Reload state
+            state.currentRole = getData('currentRole');
+            state.darkMode = getData('darkMode');
+            state.employee = getData('employee');
+            state.storeSettings = getData('storeSettings');
+            state.shifts = getData('shifts');
+            state.attendance = getData('attendance');
+            state.submissions = getData('submissions');
+        };
+
+        /** Mengubah peran dan render ulang UI */
+        const changeRole = () => {
+            let currentIndex = ROLES.indexOf(state.currentRole);
+            currentIndex = (currentIndex + 1) % ROLES.length;
+            state.currentRole = ROLES[currentIndex];
+            setData('currentRole', state.currentRole);
+            document.getElementById('current-role').textContent = state.currentRole;
+            renderUI();
+        };
+
+        /** Mengubah tema Light/Dark dan persist ke localStorage */
+        const toggleDarkMode = () => {
+            state.darkMode = state.darkMode === 'light' ? 'dark' : 'light';
+            setData('darkMode', state.darkMode);
+            applyTheme();
+        };
+
+        /** Menerapkan tema ke elemen <body> dan ikon */
+        const applyTheme = () => {
+            if (state.darkMode === 'dark') {
+                document.documentElement.classList.add('dark');
+                document.getElementById('dark-mode-icon').innerHTML = '&#9790;'; // Bulan
+            } else {
+                document.documentElement.classList.remove('dark');
+                document.getElementById('dark-mode-icon').innerHTML = '&#9788;'; // Matahari
+            }
+        };
+
+        /** Merender UI (Navigasi & Konten Halaman) */
+        const renderUI = (pageId = state.activePage) => {
+            state.activePage = pageId;
+            renderNavigation();
+            renderContent(pageId);
+        };
+
+        /** Membuat Navigasi (Sidebar/Bottom Nav) berdasarkan Peran */
+        const renderNavigation = () => {
+            const allowedNavItems = NAV_ITEMS.filter(item => item.roles.includes(state.currentRole));
+            
+            // Render Sidebar (Desktop)
+            const sidebar = document.getElementById('sidebar').querySelector('div');
+            sidebar.innerHTML = allowedNavItems.map(item => `
+                <button onclick="renderUI('${item.id}')" class="flex items-center w-full p-3 rounded-lg text-left transition duration-150 mb-2
+                    ${state.activePage === item.id ? 'bg-primary text-white shadow-md' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}
+                    focus:outline-none focus:ring-2 focus:ring-accent"
+                    aria-label="Buka Halaman ${item.label}">
+                    <span class="mr-3 text-lg">${item.icon}</span>
+                    <span class="font-medium">${item.label}</span>
+                </button>
+            `).join('');
+
+            // Render Bottom Nav (Mobile)
+            const bottomNav = document.getElementById('bottom-nav').querySelector('div');
+            bottomNav.innerHTML = allowedNavItems.slice(0, 5).map(item => `
+                <button onclick="renderUI('${item.id}')" class="flex flex-col items-center p-2 rounded-lg transition duration-150
+                    ${state.activePage === item.id ? 'text-primary dark:text-secondary' : 'text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-secondary'}
+                    focus:outline-none focus:ring-2 focus:ring-accent"
+                    aria-label="Buka Halaman ${item.label}">
+                    <span class="text-xl">${item.icon}</span>
+                    <span class="text-xs mt-1">${item.label}</span>
+                </button>
+            `).join('');
+            
+            // Pastikan elemen peran aktif terupdate
+            document.getElementById('current-role').textContent = state.currentRole;
+        };
+
+        /** Render Konten Halaman Utama */
+        const renderContent = (pageId) => {
+            const mainContent = document.getElementById('main-content');
+            mainContent.classList.remove('page-content'); // Reset animasi
+            
+            let contentHtml = `<h2 class="text-3xl font-extrabold mb-6">${NAV_ITEMS.find(i => i.id === pageId)?.label || 'Halaman'}</h2>`;
+
+            // Panggil fungsi render spesifik untuk setiap halaman
+            switch (pageId) {
+                case 'dashboard':
+                    contentHtml += renderDashboard();
+                    break;
+                case 'absensi':
+                    contentHtml += renderAbsensi();
+                    break;
+                case 'shift':
+                    contentHtml += renderShiftManagement();
+                    break;
+                case 'pengajuan':
+                    contentHtml += renderPengajuan();
+                    break;
+                case 'persetujuan':
+                    contentHtml += renderPersetujuan();
+                    break;
+                case 'laporan':
+                    contentHtml += renderLaporan();
+                    break;
+                case 'pengaturan':
+                    contentHtml += renderPengaturan();
+                    break;
+                default:
+                    contentHtml += `<p class="text-center p-10">Halaman tidak ditemukan.</p>`;
+            }
+
+            mainContent.innerHTML = contentHtml;
+            // Terapkan animasi masuk setelah konten di-set
+            setTimeout(() => {
+                mainContent.classList.add('page-content');
+            }, 10);
+            
+            // Panggil listener spesifik halaman jika ada
+            if (pageId === 'absensi') {
+                setupAbsensiListeners();
+            } else if (pageId === 'shift') {
+                setupShiftListeners();
+            } else if (pageId === 'pengaturan') {
+                setupPengaturanListeners();
+            }
+        };
+
+
+        // ======================================================================================================
+        // ** FUNGSI RENDER HALAMAN (VIEW) **
+        // ======================================================================================================
+
+        /** Render Dashboard */
+        const renderDashboard = () => {
+            const today = formatDate(new Date());
+            const totalAbsen = state.attendance.filter(a => formatDate(new Date(a.clockIn)) === today).length;
+            const status = state.attendance.length > 0 && !state.attendance[state.attendance.length - 1].clockOut ? 'Clocked In' : 'Clocked Out';
+
+            return `
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="glass p-6 rounded-xl shadow-lg animate-fade-in transition duration-300 hover:shadow-xl">
+                        <p class="text-lg text-gray-500 dark:text-gray-400">Status Hari Ini</p>
+                        <h3 class="text-4xl font-bold mt-2 ${status.includes('In') ? 'text-secondary' : 'text-primary'}">${status}</h3>
+                        <p class="text-sm mt-3">Peran Anda: <span class="font-semibold">${state.currentRole}</span></p>
+                    </div>
+                    <div class="glass p-6 rounded-xl shadow-lg animate-fade-in transition duration-300 hover:shadow-xl">
+                        <p class="text-lg text-gray-500 dark:text-gray-400">Total Absen Hari Ini</p>
+                        <h3 class="text-4xl font-bold mt-2 tabular-nums">${totalAbsen} <span class="text-2xl font-normal">Karyawan</span></h3>
+                        <p class="text-sm mt-3">Data per ${today}</p>
+                    </div>
+                    <div class="glass p-6 rounded-xl shadow-lg animate-fade-in transition duration-300 hover:shadow-xl">
+                        <p class="text-lg text-gray-500 dark:text-gray-400">Geofence Toko</p>
+                        <h3 class="text-4xl font-bold mt-2 tabular-nums">${state.storeSettings.geofence.radius} <span class="text-2xl font-normal">Meter</span></h3>
+                        <p class="text-sm mt-3">Titik koordinat terdaftar.</p>
+                    </div>
+                </div>
+
+                <h3 class="text-2xl font-bold mt-10 mb-4">Aktivitas Absensi Terbaru</h3>
+                <div class="glass p-4 rounded-xl shadow-lg overflow-x-auto">
+                    ${renderAttendanceTable(state.attendance.slice(-5).reverse())}
+                </div>
+            `;
+        };
+        
+        /** Render Halaman Absensi (Staff Only) */
+        const renderAbsensi = () => {
+            const lastRecord = state.attendance.find(a => a.userId === state.employee.id && !a.clockOut);
+            const isClockedIn = !!lastRecord;
+            const currentShift = state.shifts.find(s => s.id === state.employee.shiftId);
+            const statusText = isClockedIn ? `Anda sudah **Clock-in** pada ${formatTime(new Date(lastRecord.clockIn))} hari ini.` : 'Anda siap untuk Clock-in.';
+            
+            return `
+                <div class="glass p-8 rounded-xl shadow-lg max-w-lg mx-auto animate-slide-in-up">
+                    <p class="text-xl font-semibold mb-6 text-center">Shift Anda: ${currentShift ? `${currentShift.name} (${currentShift.start} - ${currentShift.end})` : 'Tidak Ada'}</p>
+                    <p class="text-md text-center mb-6">${statusText}</p>
+                    
+                    <button id="clock-button" data-action="${isClockedIn ? 'out' : 'in'}"
+                        class="w-full py-4 text-2xl font-bold text-white rounded-xl transition duration-300 shadow-lg hover:shadow-xl
+                        ${isClockedIn ? 'bg-accent hover:bg-amber-600 focus:ring-accent' : 'bg-secondary hover:bg-emerald-600 focus:ring-secondary'}
+                        focus:outline-none focus:ring-4 focus:ring-opacity-50"
+                        aria-label="${isClockedIn ? 'Clock Out' : 'Clock In'} Sekarang">
+                        ${isClockedIn ? 'CLOCK OUT' : 'CLOCK IN'}
+                    </button>
+                    
+                    <div class="mt-8 space-y-4">
+                        <div class="flex items-center space-x-3">
+                            <input type="radio" id="method-gps" name="absensi-method" value="GPS" checked class="text-primary focus:ring-primary">
+                            <label for="method-gps">Metode **GPS Geofence**</label>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <input type="radio" id="method-qr" name="absensi-method" value="QR" class="text-primary focus:ring-primary">
+                            <label for="method-qr">Metode **QR Code**</label>
+                        </div>
+                        <input type="text" id="qr-input" placeholder="Masukkan Kode QR" class="w-full p-3 mt-2 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hidden focus:ring-primary focus:border-primary transition" aria-label="Input QR Code">
+                    </div>
+                    
+                    <p id="absensi-message" class="mt-6 text-sm text-center text-red-500 font-medium"></p>
+                </div>
+            `;
+        };
+
+        /** Render Halaman Pengajuan (Staff Only) */
+        const renderPengajuan = () => {
+            const types = ['Izin', 'Cuti', 'Sakit', 'Lembur'];
+            
+            return `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="glass p-6 rounded-xl shadow-lg animate-slide-in-up">
+                        <h3 class="text-2xl font-bold mb-4">Buat Pengajuan Baru</h3>
+                        <form id="submission-form" class="space-y-4">
+                            <div>
+                                <label for="type" class="block text-sm font-medium mb-1">Jenis Pengajuan</label>
+                                <select id="type" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary transition">
+                                    ${types.map(t => `<option value="${t}">${t}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="date" class="block text-sm font-medium mb-1">Tanggal</label>
+                                <input type="date" id="date" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary transition">
+                            </div>
+                            <div>
+                                <label for="reason" class="block text-sm font-medium mb-1">Alasan</label>
+                                <textarea id="reason" rows="3" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary transition" placeholder="Jelaskan alasan pengajuan Anda..."></textarea>
+                            </div>
+                            <button type="submit" class="w-full py-3 bg-primary text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150 focus:outline-none focus:ring-4 focus:ring-primary focus:ring-opacity-50">
+                                Ajukan
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="glass p-6 rounded-xl shadow-lg animate-slide-in-up">
+                        <h3 class="text-2xl font-bold mb-4">Riwayat Pengajuan Saya</h3>
+                        ${renderSubmissionList(state.submissions.filter(s => s.userId === state.employee.id))}
+                    </div>
+                </div>
+            `;
+        };
+
+        /** Render Daftar Pengajuan/Persetujuan */
+        const renderSubmissionList = (submissions, isApproval = false) => {
+            if (submissions.length === 0) return '<p class="text-center text-gray-500 dark:text-gray-400 p-4">Tidak ada pengajuan.</p>';
+
+            return `
+                <div class="space-y-3">
+                    ${submissions.map(s => {
+                        let statusColor = s.status === 'Approved' ? 'bg-secondary' : s.status === 'Rejected' ? 'bg-red-500' : 'bg-accent';
+                        let statusText = s.status;
+                        
+                        return `
+                            <div class="p-4 rounded-lg bg-gray-100 dark:bg-gray-700 flex justify-between items-center transition duration-150 hover:bg-gray-200 dark:hover:bg-gray-600">
+                                <div>
+                                    <p class="font-semibold">${s.type} - <span class="text-sm text-gray-600 dark:text-gray-300">${s.userId}</span></p>
+                                    <p class="text-sm">${s.date} | ${s.reason.substring(0, 30)}${s.reason.length > 30 ? '...' : ''}</p>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="px-3 py-1 text-xs font-bold text-white rounded-full ${statusColor}">${statusText}</span>
+                                    ${isApproval && s.status === 'Pending' ? `
+                                        <button onclick="handleApproval('${s.id}', 'Approved')" class="text-secondary hover:text-green-600" aria-label="Setujui">✔</button>
+                                        <button onclick="handleApproval('${s.id}', 'Rejected')" class="text-red-500 hover:text-red-600" aria-label="Tolak">✖</button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        };
+        
+        /** Render Halaman Persetujuan (Admin/Supervisor Only) */
+        const renderPersetujuan = () => {
+            const pendingSubmissions = state.submissions.filter(s => s.status === 'Pending');
+
+            return `
+                <div class="glass p-6 rounded-xl shadow-lg animate-slide-in-up">
+                    <h3 class="text-2xl font-bold mb-4">Daftar Pengajuan Pending</h3>
+                    ${renderSubmissionList(pendingSubmissions, true)}
+                </div>
+            `;
+        };
+        
+        /** Render Halaman Manajemen Shift (Admin/Supervisor Only) */
+        const renderShiftManagement = () => {
+            return `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="glass p-6 rounded-xl shadow-lg animate-slide-in-up">
+                        <h3 id="shift-form-title" class="text-2xl font-bold mb-4">Tambah Shift Baru</h3>
+                        <form id="shift-form" class="space-y-4">
+                            <input type="hidden" id="shift-id">
+                            <div>
+                                <label for="shift-name" class="block text-sm font-medium mb-1">Nama Shift</label>
+                                <input type="text" id="shift-name" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary transition" placeholder="Contoh: Shift Pagi">
+                            </div>
+                            <div class="flex space-x-4">
+                                <div class="w-1/2">
+                                    <label for="shift-start" class="block text-sm font-medium mb-1">Waktu Mulai</label>
+                                    <input type="time" id="shift-start" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary tabular-nums transition">
+                                </div>
+                                <div class="w-1/2">
+                                    <label for="shift-end" class="block text-sm font-medium mb-1">Waktu Selesai</label>
+                                    <input type="time" id="shift-end" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary tabular-nums transition">
+                                </div>
+                            </div>
+                            <button type="submit" id="shift-submit-btn" class="w-full py-3 bg-secondary text-white font-bold rounded-lg hover:bg-emerald-600 transition duration-150 focus:outline-none focus:ring-4 focus:ring-secondary focus:ring-opacity-50">
+                                Tambah Shift
+                            </button>
+                            <button type="button" id="shift-cancel-btn" class="w-full py-3 bg-gray-400 text-white font-bold rounded-lg hover:bg-gray-500 transition duration-150 focus:outline-none focus:ring-4 focus:ring-gray-400 focus:ring-opacity-50 hidden">
+                                Batalkan Edit
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="glass p-6 rounded-xl shadow-lg animate-slide-in-up">
+                        <h3 class="text-2xl font-bold mb-4">Daftar Shift</h3>
+                        ${renderShiftsList()}
+                    </div>
+                </div>
+            `;
+        };
+
+        /** Render Daftar Shift */
+        const renderShiftsList = () => {
+            if (state.shifts.length === 0) return '<p class="text-center text-gray-500 dark:text-gray-400 p-4">Belum ada shift terdaftar.</p>';
+
+            return `
+                <div class="space-y-3">
+                    ${state.shifts.map(s => `
+                        <div class="p-4 rounded-lg bg-gray-100 dark:bg-gray-700 flex justify-between items-center transition duration-150 hover:bg-gray-200 dark:hover:bg-gray-600">
+                            <div>
+                                <p class="font-semibold">${s.name} (ID: ${s.id})</p>
+                                <p class="text-sm tabular-nums">${s.start} - ${s.end}</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="editShift('${s.id}')" class="text-primary hover:text-blue-600 p-1" aria-label="Edit Shift">✍</button>
+                                <button onclick="deleteShift('${s.id}')" class="text-red-500 hover:text-red-600 p-1" aria-label="Hapus Shift">🗑</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        };
+        
+        /** Render Tabel Absensi */
+        const renderAttendanceTable = (attendanceList) => {
+            if (attendanceList.length === 0) return '<p class="text-center text-gray-500 dark:text-gray-400 p-4">Belum ada data absensi.</p>';
+
+            return `
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead>
+                        <tr class="text-xs font-medium tracking-wider uppercase text-gray-500 dark:text-gray-400">
+                            <th class="px-4 py-3 text-left">Tanggal</th>
+                            <th class="px-4 py-3 text-left">Nama</th>
+                            <th class="px-4 py-3 text-left tabular-nums">In</th>
+                            <th class="px-4 py-3 text-left tabular-nums">Out</th>
+                            <th class="px-4 py-3 text-left">Status</th>
+                            <th class="px-4 py-3 text-left">Durasi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+                        ${attendanceList.map(a => {
+                            let statusColor = a.status === 'present' ? 'bg-secondary' : a.status === 'late' ? 'bg-accent' : 'bg-red-500';
+                            let duration = a.duration ? `${(a.duration / 3600000).toFixed(1)}h` : '-';
+                            
+                            return `
+                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-150">
+                                    <td class="px-4 py-3 whitespace-nowrap">${formatDate(new Date(a.clockIn))}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap">${a.userId}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap tabular-nums">${a.clockIn ? formatTime(new Date(a.clockIn)) : '-'}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap tabular-nums">${a.clockOut ? formatTime(new Date(a.clockOut)) : '-'}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        <span class="px-2 py-1 text-xs font-bold text-white rounded-full ${statusColor}">${a.status.toUpperCase()}</span>
+                                        ${a.isLate ? `<span class="text-red-500 text-xs ml-1 tabular-nums">(${a.lateMinutes}m late)</span>` : ''}
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap tabular-nums">${duration}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        };
+        
+        /** Render Halaman Laporan (Admin/Supervisor Only) */
+        const renderLaporan = () => {
+            return `
+                <div class="glass p-6 rounded-xl shadow-lg animate-slide-in-up">
+                    <h3 class="text-2xl font-bold mb-4">Laporan Absensi Global</h3>
+                    
+                    <div class="mb-6 flex space-x-3">
+                        <button onclick="exportData('CSV')" class="py-2 px-4 bg-primary text-white rounded-lg hover:bg-blue-600 transition duration-150 focus:outline-none focus:ring-4 focus:ring-primary focus:ring-opacity-50">
+                            Ekspor CSV
+                        </button>
+                        <button onclick="exportData('JSON')" class="py-2 px-4 bg-secondary text-white rounded-lg hover:bg-emerald-600 transition duration-150 focus:outline-none focus:ring-4 focus:ring-secondary focus:ring-opacity-50">
+                            Ekspor JSON
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        ${renderAttendanceTable(state.attendance.slice().reverse())}
+                    </div>
+                </div>
+            `;
+        };
+
+        /** Render Halaman Pengaturan (Admin Only) */
+        const renderPengaturan = () => {
+            const { geofence, qrCode } = state.storeSettings;
+            
+            return `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="glass p-6 rounded-xl shadow-lg animate-slide-in-up">
+                        <h3 class="text-2xl font-bold mb-4">Pengaturan Geofence GPS</h3>
+                        <form id="geofence-form" class="space-y-4">
+                            <div>
+                                <label for="lat" class="block text-sm font-medium mb-1">Latitude Pusat</label>
+                                <input type="number" step="any" id="lat" value="${geofence.latitude}" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary transition tabular-nums">
+                            </div>
+                            <div>
+                                <label for="lng" class="block text-sm font-medium mb-1">Longitude Pusat</label>
+                                <input type="number" step="any" id="lng" value="${geofence.longitude}" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary transition tabular-nums">
+                            </div>
+                            <div>
+                                <label for="radius" class="block text-sm font-medium mb-1">Radius (Meter)</label>
+                                <input type="number" id="radius" value="${geofence.radius}" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary transition tabular-nums">
+                            </div>
+                            <button type="submit" class="w-full py-3 bg-primary text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150 focus:outline-none focus:ring-4 focus:ring-primary focus:ring-opacity-50">
+                                Simpan Geofence
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="glass p-6 rounded-xl shadow-lg animate-slide-in-up">
+                        <h3 class="text-2xl font-bold mb-4">Pengaturan QR Code Fallback</h3>
+                        <form id="qr-form" class="space-y-4">
+                            <div>
+                                <label for="qr-code" class="block text-sm font-medium mb-1">Kode QR Valid</label>
+                                <input type="text" id="qr-code" value="${qrCode}" required class="w-full p-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary transition">
+                            </div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Kode ini akan digunakan sebagai fallback jika GPS tidak tersedia atau gagal.</p>
+                            <button type="submit" class="w-full py-3 bg-primary text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150 focus:outline-none focus:ring-4 focus:ring-primary focus:ring-opacity-50">
+                                Simpan QR Code
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        };
+
+
+        // ======================================================================================================
+        // ** FUNGSI UTAMA (LOGIC & INTERAKSI) **
+        // ======================================================================================================
+
+        // --- Fitur Clock-in/out ---
+
+        /** Menyiapkan event listener untuk halaman Absensi */
+        const setupAbsensiListeners = () => {
+            document.getElementById('clock-button').addEventListener('click', handleClockAction);
+            document.querySelectorAll('input[name="absensi-method"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    document.getElementById('qr-input').classList.toggle('hidden', e.target.value === 'GPS');
+                });
+            });
+        };
+
+        /** Logika Clock-in/out */
+        const handleClockAction = async (e) => {
+            const action = e.target.dataset.action;
+            const method = document.querySelector('input[name="absensi-method"]:checked').value;
+            const messageElement = document.getElementById('absensi-message');
+            messageElement.textContent = '';
+            
+            let isValid = false;
+            let locationData = { lat: null, lng: null, method: method };
+
+            if (method === 'GPS') {
+                messageElement.textContent = 'Mengecek lokasi via GPS...';
+                try {
+                    locationData = await getGeoLocation();
+                    const distance = getDistance(
+                        locationData.lat, locationData.lng,
+                        state.storeSettings.geofence.latitude, state.storeSettings.geofence.longitude
+                    );
+
+                    if (distance <= state.storeSettings.geofence.radius) {
+                        isValid = true;
+                        messageElement.textContent = `Lokasi valid. Jarak: ${distance.toFixed(1)}m.`;
+                    } else {
+                        messageElement.textContent = `Gagal: Anda berada di luar radius geofence (${distance.toFixed(1)}m).`;
+                    }
+                } catch (error) {
+                    messageElement.textContent = `Gagal mendapatkan lokasi GPS: ${error}. Coba metode QR Code.`;
+                }
+            } else if (method === 'QR') {
+                const qrInput = document.getElementById('qr-input').value.trim();
+                if (qrInput === state.storeSettings.qrCode) {
+                    isValid = true;
+                    messageElement.textContent = 'Kode QR valid.';
+                } else {
+                    messageElement.textContent = 'Gagal: Kode QR tidak cocok.';
+                }
+            }
+            
+            if (isValid) {
+                if (action === 'in') {
+                    clockIn(locationData.lat, locationData.lng, locationData.method);
+                } else {
+                    clockOut();
+                }
+                // Refresh halaman Absensi
+                renderUI('absensi'); 
+            }
+        };
+
+        /** Mendapatkan posisi Geolocation (Promise-based) */
+        const getGeoLocation = () => {
+            return new Promise((resolve, reject) => {
+                if (!navigator.geolocation) {
+                    return reject('Geolocation tidak didukung di browser ini.');
+                }
+                navigator.geolocation.getCurrentPosition(
+                    (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude, method: 'GPS' }),
+                    (error) => reject(error.message),
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            });
+        };
+
+        /** Proses Clock-in */
+        const clockIn = (lat, lng, method) => {
+            const now = new Date();
+            const currentShift = state.shifts.find(s => s.id === state.employee.shiftId);
+            let isLate = false;
+            let lateMinutes = 0;
+
+            if (currentShift) {
+                const shiftStart = new Date();
+                const [h, m] = currentShift.start.split(':').map(Number);
+                shiftStart.setHours(h, m, 0, 0);
+
+                if (now.getTime() > shiftStart.getTime()) {
+                    isLate = true;
+                    // Hitung keterlambatan dalam menit
+                    lateMinutes = Math.floor((now.getTime() - shiftStart.getTime()) / (1000 * 60));
+                }
+            }
+            
+            const newRecord = {
+                id: Date.now().toString(),
+                userId: state.employee.id,
+                clockIn: now.toISOString(),
+                clockOut: null,
+                duration: null,
+                status: isLate ? 'late' : 'present',
+                isLate: isLate,
+                lateMinutes: lateMinutes,
+                latIn: lat,
+                lngIn: lng,
+                method: method
+            };
+
+            state.attendance.push(newRecord);
+            setData('attendance', state.attendance);
+            showModal('Clock-in Berhasil', `<p class="font-bold text-secondary">Absensi Clock-in dicatat!</p><p>Waktu: ${formatTime(now)}</p>${isLate ? `<p class="text-red-500">Anda terlambat ${lateMinutes} menit.</p>` : ''}`);
+        };
+
+        /** Proses Clock-out */
+        const clockOut = () => {
+            const now = new Date();
+            const lastRecordIndex = state.attendance.findIndex(a => a.userId === state.employee.id && !a.clockOut);
+
+            if (lastRecordIndex !== -1) {
+                const clockInTime = new Date(state.attendance[lastRecordIndex].clockIn);
+                const duration = now.getTime() - clockInTime.getTime(); // Durasi dalam milidetik
+
+                state.attendance[lastRecordIndex].clockOut = now.toISOString();
+                state.attendance[lastRecordIndex].duration = duration;
+                
+                setData('attendance', state.attendance);
+                showModal('Clock-out Berhasil', `<p class="font-bold text-accent">Absensi Clock-out dicatat!</p><p>Waktu: ${formatTime(now)}</p><p>Durasi Kerja: ${(duration / 3600000).toFixed(2)} jam</p>`);
+            } else {
+                showModal('Error', '<p class="text-red-500">Gagal: Tidak ada record Clock-in yang aktif.</p>');
+            }
+        };
+
+        // --- Fitur Manajemen Shift ---
+        
+        /** Menyiapkan event listener untuk halaman Manajemen Shift */
+        const setupShiftListeners = () => {
+            document.getElementById('shift-form').addEventListener('submit', saveShift);
+            document.getElementById('shift-cancel-btn').addEventListener('click', resetShiftForm);
+        };
+        
+        /** Menyimpan (Tambah/Edit) Shift */
+        const saveShift = (e) => {
+            e.preventDefault();
+            const id = document.getElementById('shift-id').value;
+            const name = document.getElementById('shift-name').value;
+            const start = document.getElementById('shift-start').value;
+            const end = document.getElementById('shift-end').value;
+
+            if (id) {
+                // Edit
+                const index = state.shifts.findIndex(s => s.id === id);
+                if (index !== -1) {
+                    state.shifts[index] = { id, name, start, end };
+                }
+            } else {
+                // Tambah Baru
+                const newId = 'S' + (state.shifts.length + 1).toString().padStart(3, '0');
+                state.shifts.push({ id: newId, name, start, end });
+            }
+
+            setData('shifts', state.shifts);
+            resetShiftForm();
+            renderUI('shift'); // Refresh konten
+            showModal('Sukses', `<p>Shift ${name} berhasil disimpan.</p>`);
+        };
+
+        /** Mengisi form untuk Edit Shift */
+        const editShift = (id) => {
+            const shift = state.shifts.find(s => s.id === id);
+            if (shift) {
+                document.getElementById('shift-id').value = shift.id;
+                document.getElementById('shift-name').value = shift.name;
+                document.getElementById('shift-start').value = shift.start;
+                document.getElementById('shift-end').value = shift.end;
+                
+                document.getElementById('shift-form-title').textContent = 'Edit Shift: ' + shift.name;
+                document.getElementById('shift-submit-btn').textContent = 'Update Shift';
+                document.getElementById('shift-cancel-btn').classList.remove('hidden');
+            }
+        };
+        
+        /** Menghapus Shift */
+        const deleteShift = (id) => {
+            showModal('Konfirmasi Hapus', `<p>Apakah Anda yakin ingin menghapus Shift ID **${id}**?</p>`, () => {
+                state.shifts = state.shifts.filter(s => s.id !== id);
+                setData('shifts', state.shifts);
+                renderUI('shift');
+            });
+        };
+
+        /** Mereset form Shift */
+        const resetShiftForm = () => {
+            document.getElementById('shift-form').reset();
+            document.getElementById('shift-id').value = '';
+            document.getElementById('shift-form-title').textContent = 'Tambah Shift Baru';
+            document.getElementById('shift-submit-btn').textContent = 'Tambah Shift';
+            document.getElementById('shift-cancel-btn').classList.add('hidden');
+        };
+
+        // --- Fitur Pengajuan & Persetujuan ---
+        
+        /** Menangani pengiriman form Pengajuan */
+        document.addEventListener('submit', (e) => {
+            if (e.target.id === 'submission-form') {
+                e.preventDefault();
+                const type = document.getElementById('type').value;
+                const date = document.getElementById('date').value;
+                const reason = document.getElementById('reason').value;
+
+                const newSubmission = {
+                    id: 'SUB' + Date.now().toString(),
+                    userId: state.employee.id,
+                    type: type,
+                    date: date,
+                    reason: reason,
+                    status: 'Pending',
+                    submittedAt: new Date().toISOString()
+                };
+
+                state.submissions.push(newSubmission);
+                setData('submissions', state.submissions);
+                document.getElementById('submission-form').reset();
+                renderUI('pengajuan');
+                showModal('Pengajuan Terkirim', `<p>Pengajuan **${type}** untuk tanggal ${date} berhasil dikirim.</p><p class="text-accent">Menunggu persetujuan.</p>`);
+            }
+        });
+        
+        /** Menangani Persetujuan/Penolakan Pengajuan */
+        const handleApproval = (id, status) => {
+            showModal('Konfirmasi', `<p>Apakah Anda yakin ingin ${status === 'Approved' ? 'MENYETUJUI' : 'MENOLAK'} pengajuan ID **${id}**?</p>`, () => {
+                const index = state.submissions.findIndex(s => s.id === id);
+                if (index !== -1) {
+                    state.submissions[index].status = status;
+                    state.submissions[index].approvedBy = state.employee.id;
+                    state.submissions[index].approvedAt = new Date().toISOString();
+                    
+                    setData('submissions', state.submissions);
+                    renderUI('persetujuan');
+                    showModal('Persetujuan', `<p>Pengajuan ID **${id}** telah diubah menjadi **${status}**.</p>`);
+                }
+            });
+        };
+
+        // --- Fitur Pengaturan ---
+        
+        /** Menyiapkan event listener untuk halaman Pengaturan */
+        const setupPengaturanListeners = () => {
+            document.getElementById('geofence-form').addEventListener('submit', saveGeofence);
+            document.getElementById('qr-form').addEventListener('submit', saveQrCode);
+        };
+
+        /** Menyimpan Geofence Settings */
+        const saveGeofence = (e) => {
+            e.preventDefault();
+            state.storeSettings.geofence = {
+                latitude: parseFloat(document.getElementById('lat').value),
+                longitude: parseFloat(document.getElementById('lng').value),
+                radius: parseInt(document.getElementById('radius').value)
+            };
+            setData('storeSettings', state.storeSettings);
+            showModal('Sukses', '<p>Pengaturan Geofence berhasil diperbarui.</p>');
+        };
+
+        /** Menyimpan QR Code Setting */
+        const saveQrCode = (e) => {
+            e.preventDefault();
+            state.storeSettings.qrCode = document.getElementById('qr-code').value;
+            setData('storeSettings', state.storeSettings);
+            showModal('Sukses', '<p>Pengaturan QR Code berhasil diperbarui.</p>');
+        };
+
+        // --- Fitur Laporan & Ekspor ---
+        
+        /** Fungsi Ekspor Data */
+        const exportData = (type) => {
+            const data = state.attendance;
+            if (data.length === 0) return showModal('Ekspor Gagal', '<p class="text-red-500">Tidak ada data absensi untuk diekspor.</p>');
+
+            let content = '';
+            let filename = `attendance_export_${new Date().toISOString().slice(0, 10)}`;
+
+            if (type === 'JSON') {
+                content = JSON.stringify(data, null, 2);
+                filename += '.json';
+                
+            } else if (type === 'CSV') {
+                const headers = ["ID", "User ID", "Clock In", "Clock Out", "Duration (ms)", "Status", "Is Late", "Late Minutes", "Latitude In", "Longitude In", "Method"];
+                content += headers.join(',') + '\n';
+                
+                data.forEach(row => {
+                    const rowData = [
+                        `"${row.id}"`,
+                        `"${row.userId}"`,
+                        `"${row.clockIn}"`,
+                        `"${row.clockOut || ''}"`,
+                        row.duration || 0,
+                        `"${row.status}"`,
+                        row.isLate ? 'TRUE' : 'FALSE',
+                        row.lateMinutes || 0,
+                        row.latIn || '',
+                        row.lngIn || '',
+                        `"${row.method}"`
+                    ];
+                    content += rowData.join(',') + '\n';
+                });
+                filename += '.csv';
+            }
+
+            // Membuat link download
+            const blob = new Blob([content], { type: type === 'JSON' ? 'application/json' : 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showModal('Ekspor Sukses', `<p>Data absensi berhasil diekspor ke file **${filename}**.</p>`);
+        };
+
+
+        // ======================================================================================================
+        // ** INITIATION (ENTRY POINT) **
+        // ======================================================================================================
+
+        /** Fungsi inisiasi aplikasi */
+        const initApp = () => {
+            loadInitialData(); // Pastikan localStorage terisi default jika kosong
+            applyTheme();
+            
+            // Event Listeners Global
+            document.getElementById('toggle-role').addEventListener('click', changeRole);
+            document.getElementById('toggle-dark-mode').addEventListener('click', toggleDarkMode);
+            document.getElementById('modal-container').addEventListener('click', (e) => {
+                // Tutup modal jika klik di luar modal content
+                if (e.target.id === 'modal-container') {
+                    closeModal();
+                }
+            });
+
+            // Render UI awal
+            renderUI(); 
+        };
+
+        // Jalankan inisiasi saat DOMContentLoaded
+        document.addEventListener('DOMContentLoaded', initApp);
+
+    </script>
+</body>
+</html>
